@@ -9,7 +9,9 @@ import subprocess as sp
 # pip
 import numpy as np
 import pandas as pd
+import xarray as xr
 from scipy import signal as sg
+from tqdm import tqdm
 
 # swash
 from .io import SwashIO
@@ -24,7 +26,7 @@ class SwashProject(object):
 
         http://swash.sourceforge.net/download/zip/swashuse.pdf
         '''
-
+        self.tendc = None
         self.p_main = op.join(p_proj, n_proj)    # project path
         self.name = n_proj                       # project name
 
@@ -41,7 +43,7 @@ class SwashProject(object):
         self.Cf = None
         self.cf_ini = None
         self.cf_fin = None
-
+        
         # vegetation
         self.vegetation = None
         self.vegetation_file = None
@@ -51,12 +53,11 @@ class SwashProject(object):
         self.drag = None
         self.np_ini = None
         self.np_fin = None
-
+        
         # Wind
-        self.Vel = None
-        self.Wdir = None
+        self.wind = False
         self.Ca = None
-
+        
         # input.swn file parameters
         self.input_waves = True
         self.vert = None
@@ -64,12 +65,11 @@ class SwashProject(object):
         self.par_jonswap_gamma = None
         self.WL = None
         self.vert = None        # vertical layers
-
+        
         self.Nonhydrostatic = False
-        self.wind = False
         self.coords_spherical = False  # True spherical, False cartesian
         sp.specfilename = None
-
+        
         # computational grid parameters
         self.cc_xpc = None      # x origin
         self.cc_ypc = None      # y origin
@@ -91,7 +91,7 @@ class SwashProject(object):
         self.dp_myc = None      # number mesh y
         self.dp_dxinp = None    # size mesh x
         self.dp_dyinp = None    # size mesh y
-
+        
         self.flume = None
         self.plane = None
         self.Gate_Q = None
@@ -103,8 +103,8 @@ class SwashProject(object):
         self.step = None
         self.warmup = None
         self.delttbl = None
-
-
+        
+        
 class SwashWrap(object):
     'SWASH numerical model wrap for multi-case handling'
 
@@ -121,10 +121,10 @@ class SwashWrap(object):
 
         # resources
         p_res = op.join(op.dirname(op.realpath(__file__)), 'resources')
-
+       
         # swan bin executable
-        self.bin = op.abspath(op.join(p_res, 'swash_bin', 'swash_ser.exe'))
-
+        self.bin = op.abspath(op.join(p_res, 'swash_bin', 'swash.exe'))
+               
     def build_cases(self, waves_dataset):
         '''
         generates all files needed for swash multi-case execution
@@ -134,54 +134,54 @@ class SwashWrap(object):
 
         # make main project directory
         self.io.make_project()
-
+        
         new_waves = pd.DataFrame()
-
+        
         if waves_dataset['forcing'].values[0] == "Jonswap":
-                waves_dataset.rename(columns={"Tp": "T", "Hs": "H"}, inplace=True)
-
+            waves_dataset = waves_dataset.rename(columns={'tp': 'T', 'hs': 'H'})
+            
         # one stat case for each wave sea state
         for ix, (_, ws) in enumerate(waves_dataset.iterrows()):
 
             # build stat case 
             case_id = '{0:04d}'.format(ix)
-            waves = self.io.build_case(case_id, ws)
+            waves = self.io.build_case(case_id, ws)    
             waves = waves.to_frame()
-
+            
             new_waves = pd.concat([new_waves, waves], axis=1)
-
+            
         return(new_waves.transpose())
-
+            
     def make_reef(self, waves_dataset):
-
+        
         # make main project directory
         self.io.make_project()
 
         coral_config = pd.DataFrame()
-
+        
         # one stat case for each wave sea state
         for ix, (_, ws) in enumerate(waves_dataset.iterrows()):
 
             # build stat case 
             case_id = '{0:04d}'.format(ix)
-
+            
             # SWASH case path
             p_case = op.join(self.proj.p_cases, case_id)
 
             # make execution dir
             if not op.isdir(p_case): os.makedirs(p_case)
-
-            waves_reef, depth = self.io.make_reef(p_case, case_id, ws)
-
+        
+            waves_reef, depth = self.io.make_reef(p_case, case_id, ws)  
+            
             waves_reef = waves_reef.to_frame()
-
+            
             coral_config = pd.concat([coral_config, waves_reef], axis=1)
-
+            
         return(coral_config.transpose(), depth)
-
+    
     def make_waves_series(self, waves_dataset):
         'Irregular waves series (forcing): monochromatic, bichromatic, Jonswap'
-
+        
         # make main project directory
         self.io.make_project()
 
@@ -190,22 +190,22 @@ class SwashWrap(object):
 
             # build stat case 
             case_id = '{0:04d}'.format(ix)
-
+            
             # SWASH case path
             p_case = op.join(self.proj.p_cases, case_id)
 
             # make execution dir
             if not op.isdir(p_case): os.makedirs(p_case)
-
+            
             if ws['forcing'] == "Bichromatic":
                 series = self.io.make_regular(p_case, ws, 'bi')
             elif ws['forcing'] == "Monochromatic":
                 series = self.io.make_regular(p_case, ws, 'mono')
             else:
-                ws = ws.rename(columns={"Tp": "T", "Hs": "H"})
                 series = self.io.make_Jonswap(p_case, ws)
-
+        
         return(series.transpose())
+
 
     def get_run_folders(self):
         'return sorted list of project cases folders'
@@ -219,11 +219,11 @@ class SwashWrap(object):
         'run all cases inside project "cases" folder'
 
         # TODO: improve log / check execution ending status
-
+        
         # get sorted execution folders
         run_dirs = self.get_run_folders()
         for p_run in run_dirs:
-
+            
             # run case
             self.run(p_run)
 
@@ -260,27 +260,33 @@ class SwashWrap(object):
         cmd = 'cd {0} && ln -sf input.sws INPUT && {1} INPUT'.format(
             p_run, self.bin)
         bash_cmd(cmd)
-
+        
         # windows launch
         #cmd = 'cd {0} && swashrun input && {1} input'.format(
         #    p_run, self.bin)
         #bash_cmd(cmd)
+        
 
+    def drm4g_cases(self):
+        'use drm4g library to queque SWASH executions'
 
+        # TODO
+        pass
 
+    
     def fft_wafo(self, df):
         ''
-
+        
         return(self.io.cal_HT(df))
-
+    
     def reflection(self, ws, xds_out):
         'calculate reflection coefficient from incident and outgoing energy'
-
+        
         depth = self.proj.depth
         delttbl = self.proj.delttbl
-
+        
         flume = int(len(depth)/4)
-        hs = np.float(ws['H'].values)
+        H = np.float(ws['H'].values)
 
         sw_out = xds_out.isel(Xp = int(flume/2)).Watlev.values
         sw_out = sw_out[np.isnan(sw_out) == False]
@@ -288,89 +294,94 @@ class SwashWrap(object):
 
         m0out = np.trapz(Eout, x=fout)
         Hsout = 4 * np.sqrt(m0out)
-        Kr = np.sqrt((Hsout/hs)-1)
-
+        Kr = np.sqrt((Hsout/H)-1)
+        
         return(Kr)
-
+    
     def postprocessing(self, waves, t_video):
         '''
         Calculate setup, significant wave heigh and print outputs
-
+        
         waves   -  DataFrame with waves vars
         t_video -  Duration output video
         '''
-
+        
         # get sorted execution folders
         run_dirs = self.get_run_folders()
-
+        depth = - np.array(self.proj.depth)
+        tendc = self.proj.tendc
+        
         Gate_Q = waves.Gate_Q
+        dxinp = self.proj.dxinp
         WL = waves.WL
-
+        
         ru2, Q = [], []
-
+      
         # exctract output case by case and concat in list
         for case_id, p_run in enumerate(run_dirs):
 
             xds_out = self.io.output_points(p_run)   # output.tab
-            depth = np.loadtxt(op.join(p_run, 'depth.bot'))
-
+            
             print("\033[1m" +'\nOutput table\n' + "\033[0m")
             print(xds_out)
-
+            
             ws = waves.iloc[[case_id]]
             ws['h0'] = np.abs(depth[0])
             warmup = ws.warmup.values
-
+            
             wp = np.where(xds_out.Tsec.values > warmup)[0]
 
-            # overtopping
+            # overtopping (swash m2/s)
             q = xds_out.isel(Tsec=wp, Xp=int(Gate_Q)).Qmag.values
-            q[np.where(q == -9999.0)] = np.nan
+            q[np.where(q == -9999.0)[0]] = 0
             q = q[np.isnan(q)==False]
             q = q[np.where(q > 0)]
-
-            ws['q'] = np.nanmean(q)*1000
-            Q.append(np.nanmean(q)*1000) # [l/s/m] 
-
+            
+            ws['q'] = np.nansum(q)*1000/tendc
+            Q.append(np.nansum(q)*1000/tendc) # [l/s/m]
+            
             # reflection coefficient
             ws['kr'] = self.reflection(ws, xds_out)
-
+            
             # runup
             g = xds_out.isel(Tsec=wp).Runlev.values
             g[np.where(g == -9999.0)] = np.nan
             g = g[np.isnan(g)==False]
-
-            if len(g) > 0:
-                ws['ru2'] = np.percentile(g, 98) + WL
-                ru2.append(np.percentile(g, 98) + WL)
-
+         
+            if len(g) > 0 and np.percentile(g,98)<depth[int(Gate_Q[case_id]/dxinp)]:
+                ws['ru2'] = np.percentile(g, 98)
+                ru2.append(np.percentile(g, 98))
             else:
-                ws['ru2'] = np.nan
-                ru2.append(np.nan)
-
+                ws['ru2'] = depth[int(Gate_Q[case_id]/dxinp)]
+                ru2.append(depth[int(Gate_Q[case_id]/dxinp)])
+            
             # statistical and spectral hi
             df_Hi, ds_fft_hi = self.io.cal_HT(ws, xds_out)
-
+            
             print("\033[1m" + "\nProcessed data: Fft transformation\n" + "\033[0m")
             print(df_Hi)
-
+            
             # calculate mean setup
             df = self.io.cal_setup(ws, xds_out)
-
+            
             xds_out = xds_out.squeeze()
-
+            
             # histograms Ru, Q, Hi
-            self.plots.histograms(ws, xds_out, g, q, df, df_Hi, ds_fft_hi, depth, p_run)
-
+            #if len(g) > 0:
+            #    self.plots.histograms(ws, xds_out, g, q[0], df, df_Hi, ds_fft_hi, depth, p_run)
+            
             # save results into folder
+            
             self.plots.single_plot_stat(ws, xds_out, df, df_Hi, p_run, depth)
             self.plots.single_plot_nonstat(ws, xds_out, df, df_Hi, p_run, depth, t_video)
-
+            
             print("\033[1m" + '\nEnd postprocessing case {0}\n'.format(case_id) + "\033[0m")
-
+            
+        return(xds_out)
+    
     def print_wraps(self, waves_dataset):
         'Print "input.sws" files'
-
+        
         # make main project directory
         self.io.make_project()
 
@@ -380,14 +391,90 @@ class SwashWrap(object):
             case_id = '{0:04d}'.format(ix)
             self.io.print_wrap(case_id)
 
+        
     def plot_grid(self, waves_dataset):
         "Plot computational grids"
-
+        
         # make main project directory
         self.io.make_project()
 
         # one stat case for each wave sea state
         for ix, (_, ws) in enumerate(waves_dataset.iterrows()):
 
-            self.plots.plot_computational(ws)
+            self.plots.plot_computational(ws)        
+        
+        
+    def metaoutput(self, waves):
+        '{Hs, Tp, Wx, NMM} -> {Ru2%, qmean}'
+        
+        # get sorted execution folders
+        run_dirs = self.get_run_folders()
+        depth = - self.proj.depth
+        dxinp = self.proj.dxinp
+        tendc = self.proj.tendc
+        
+        Gate_Q = waves.Gate_Q.values
+        WL = waves.WL.values
 
+        ru2, Q = [], []
+
+        xds_meta = xr.Dataset({})
+        xds_Hi = xr.Dataset({})
+
+        # exctract output case by case and concat in list
+        for case_id in tqdm(range(len(run_dirs))):
+            p_run = run_dirs[case_id]
+            xds_out = self.io.output_points(p_run)   # output.tab
+
+            ws = waves.iloc[[case_id]]
+            ws['h0'] = np.abs(depth[0])
+            warmup = ws.warmup.values
+
+            wp = np.where(xds_out.Tsec.values > warmup)[0]
+
+            # overtopping
+            q = xds_out.isel(Tsec=wp, Xp=int(Gate_Q[case_id])).Qmag.values
+            q[np.where(q == -9999.0)] = 0
+            q = q[np.isnan(q)==False]
+            q = q[np.where(q >= 0)]
+
+            ws['q'] = np.nansum(q)*1000/tendc
+            Q.append(np.nansum(q)*1000/tendc) # [l/s/m] 
+
+            # runup
+            g = xds_out.isel(Tsec=wp).Runlev.values
+            g[np.where(g == -9999.0)] = np.nan
+            g = g[np.isnan(g)==False]
+
+            if len(g) > 0:
+                ws['ru2'] = np.percentile(g, 98) 
+                ru2.append(np.percentile(g, 98))
+
+            else:
+                ws['ru2'] = depth[int(Gate_Q[case_id]/dxinp)]
+                ru2.append(depth[int(Gate_Q[case_id]/dxinp)])
+
+            # save results into folder
+            xds_out = xds_out.squeeze()
+
+            # Stadistics Ru2% - qmean
+            ds_sta = xr.Dataset(
+                    {
+                        'Ru2': ws['ru2'],
+                        'q': ws['q']
+                    }
+                )
+
+            xds_meta = xr.combine_by_coords([ds_sta, xds_meta])
+            pass
+                
+        return(xds_meta)
+        
+        
+        
+        
+        
+        
+        
+        
+        

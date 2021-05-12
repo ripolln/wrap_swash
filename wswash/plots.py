@@ -21,7 +21,6 @@ import matplotlib.mlab as mlab
 import cmocean
 
 
-
 class SwashPlot(object):
     'SWASH numerical model plotting'
 
@@ -64,7 +63,7 @@ class SwashPlot(object):
         xnew = xnew[np.where(xnew <= x[-1])]  # avoid xnew values bellow the interpolation range
         f = interpolate.interp1d(x, depth)
         ynew = f(xnew)
-        yp = np.arange(np.min(-depth), np.max(-depth), dx)
+        yp = np.arange(np.min(-depth), np.max(-depth)+dx, dx)
         
         # plot
         fig, axs = plt.subplots(2, figsize = (12, 8), sharex=True)
@@ -88,12 +87,12 @@ class SwashPlot(object):
         depth = self.proj.depth
         depth = np.array(depth)
    
-        x = np.array(range(len(depth)))
+        x = self.proj.dxinp * np.array(range(len(depth)))
        
         fig, ax = plt.subplots(1, figsize = (12, 4))
-        ax.fill_between(range(len(depth)), - depth[0],  np.zeros((len(depth))), facecolor="deepskyblue", alpha=0.5, zorder=1)
-        ax.fill_between(range(len(depth)), np.zeros((len(depth))) - depth[0],  -depth, facecolor="wheat", alpha=1, zorder=2)
-        ax.plot(range(len(depth)),  -depth, color = 'k', zorder=3)
+        ax.fill_between(x, - depth[0],  np.zeros((len(depth))), facecolor="deepskyblue", alpha=0.5, zorder=1)
+        ax.fill_between(x, np.zeros((len(depth))) - depth[0],  -depth, facecolor="wheat", alpha=1, zorder=2)
+        ax.plot(x,  -depth, color = 'k', zorder=3)
         
         # friction
         if self.proj.friction != None:
@@ -143,7 +142,7 @@ class SwashPlot(object):
         # customize axes
         ax.set_ylabel('$Depth$ $[m]$', fontweight='bold')
         ax.set_xlabel('$X$ $[m]$', fontweight='bold')
-        ax.set_xlim(0, range(len(depth))[-1])
+        ax.set_xlim(0, x[-1])
         ax.set_ylim(-depth[0], -min(depth)+3)
     
 
@@ -154,6 +153,8 @@ class SwashPlot(object):
         waves:   DataFrame with wave vars
         series:  surface elevation series
         '''
+        WL = waves['WL'].values
+        #series = series - WL # In hilbert transform the data must be real
         
         # basic import
         tendc = self.proj.tendc
@@ -196,7 +197,7 @@ class SwashPlot(object):
         ax.grid(which='both', color='lightgray', linestyle='-', linewidth=0.9)
         # ax.set_xlim(min(f), max(f))
         ax.set_xlim(0,1)
-        ax.set_ylim(0, 1.1)
+        ax.set_ylim(0, 10)
         ax.set_xlabel('f [Hz]', fontweight='bold')
         # ax.yaxis.set_label_position("right")
         ax.set_ylabel(r'PDS $[m^{2} s]$', fontweight='bold')
@@ -206,7 +207,7 @@ class SwashPlot(object):
         'axes plot watlev for (x = gate)'
         
         warmup = ws['warmup'].values
-        hs = ws['H'].values
+        H = ws['H'].values
         
         wt = xds_table.Tsec.values
         wt = xds_table.Tsec.values[np.where(wt >= warmup)[0]]
@@ -219,15 +220,15 @@ class SwashPlot(object):
         ax.set_xlim(xds_table.Tsec.values[0], xds_table.Tsec.values[-1])
         ax.set_ylabel('\u03B7 $[m] (WG = {0})$'.format(gate), fontweight='bold')
         ax.set_xlabel('Time [m]', fontweight='bold')
-        ax.set_ylim(-1.5*np.float(hs), 1.5*np.float(hs))
+        ax.set_ylim(-1.5*np.float(H), 1.5*np.float(H))
         
 
-    def output_forcing(self, ax, ws, xds_table, p, t):
+    def output_forcing(self, ax, x, ws, xds_table, p, t):
         'axes plot wave forcing in the west boundary inluding spinup time'
         
         # read vars
         wt = xds_table.Tsec.values
-        waves = xds_table.sel(Xp=0, Tsec=wt).Watlev.values.squeeze()
+        waves = xds_table.sel(Xp=x, Tsec=wt).Watlev.values.squeeze()
         pw = np.where(xds_table.isel(Tsec=p).Watlev.values!=-99)
             
         # set axis to fill between
@@ -240,7 +241,7 @@ class SwashPlot(object):
         # customize axes          
         ax.plot(wt, waves, 'k', linewidth=1, zorder=1)
         ax.scatter(wt[p], waves[p], c='red', s=20, marker='o', zorder=2)
-        ax.set_ylabel('\u03B7 $[m] (x = 0)$', fontweight='bold', horizontalalignment='left')
+        ax.set_ylabel('\u03B7 $[m] (x = {0})$'.format(x), fontweight='bold', horizontalalignment='left')
         ax.set_xlim(wt[0], wt[-1])
         
 
@@ -273,6 +274,8 @@ class SwashPlot(object):
     def output_gate_runrup(self, ax, ws, xds_table, p, t):
         ' axes plot output runup from intersection free surface-profile'
         
+        ru2 = ws['ru2'].values
+       
         # read vars
         wt = xds_table.Tsec.values
         runup = xds_table.sel(Tsec=wt).Runlev.values*100
@@ -284,25 +287,27 @@ class SwashPlot(object):
         ax.set_ylabel('Ru $[cm]$', fontweight='bold', horizontalalignment='left')
         
         # Validation box
-        
+        props = dict(boxstyle='round', facecolor='azure', alpha=1, edgecolor='lightcyan')
         if np.isnan(runup).all() == True:
-            props = dict(boxstyle='round', facecolor='azure', alpha=1, edgecolor='lightcyan')
             ax.text(0.03, 0.8, '$No$ $runup$ $computed$', 
                     transform=ax.transAxes, 
                     fontsize=10, 
                     horizontalalignment='left',
                     bbox=props)
+        else:
+            ax.text(0.03, 0.8, 'Ru2% = {0:.2f} (m)'.format(np.float(ru2)),
+                   transform=ax.transAxes,
+                   fontsize=10,
+                   horizontalalignment='left',
+                   bbox=props)
         
         
     def output_gate_disch(self, ax, ws, xds_table, p, t):
         'axes plot output instantaneous discharge magnitude'
         
-        gate = ws['Gate_Q'].values
+        dxinp = self.proj.dxinp
+        gate = int(ws['Gate_Q'].values[0])
         q = ws['q'].values
-        
-        # find position in dataset
-        tr = np.where(xds_table.Xp.values >= gate)[0][0]
-        gate = xds_table.Xp.values[tr]
         
         # read vars
         wt = xds_table.Tsec.values
@@ -376,6 +381,8 @@ class SwashPlot(object):
         dx = ws['dx'].values
         kr = ws['kr'].values
         hini = -xds_table.isel(Tsec=0).Botlev.values[0]
+        gate = ws['Gate_Q'].values[0]
+        dxinp = self.proj.dxinp
         
         # Set axis to fill between
         x = xds_table.Xp.values[np.where(xds_table.Xp.values <= df_Hi.Xi.values[-1])]
@@ -396,50 +403,61 @@ class SwashPlot(object):
         ax.plot(df.Xp.values, df.Setup.values, c='blue', zorder=1, label='Setup')
  
         # runup elevation point
-        if np.isnan(ru2) == False:
-            idx1 = np.argwhere(np.diff(np.sign(depth - np.zeros(len(depth))+ru2-WL)) != 0).reshape(-1) + 0
-            ax.scatter(range(len(depth))[idx1[0]], ru2-WL, marker='o', s= 20, c='coral', alpha=1, zorder=3, label='$Ru_{2}$')
-
+        # if np.isnan(ru2) == False:
+        # idx1 = np.argwhere(np.diff(np.sign(depth - np.zeros(len(depth))+ru2-WL)) != 0).reshape(-1) + 0
+        # ax.scatter(range(len(depth))[idx1[0]], ru2-WL, marker='o', s= 20, c='coral', alpha=1, zorder=3, label='$Ru_{2}$')
+        
+        # Gate to overtopping
+        ax.scatter(gate, -depth[int(gate/dxinp)], marker='o', s=20, c='coral', alpha=1, zorder=3, label='Overtopping Gate')
+        
         # customize axes
         ax.set_ylabel('y [m]', fontweight='bold')
+        #ax.set_xlim(xds_table.Xp.values[0], xds_table.Xp.values[-1])
         ax.set_xlim(xds_table.Xp.values[0], xds_table.Xp.values[-1])
         ax.set_ylim(-h0, np.nanmax(-xds_table.sel(Tsec=0).Botlev.values)+2)
         ax.legend(loc='lower right')
         props = dict(boxstyle='round', facecolor='snow', alpha=0.6, edgecolor='w')
-        ax.text(0.03, 0.07, '  $Kr = {0:.2f}$ \n $h0 = {1:.2f} m$ \n  $dx = {2:.2f}$'.format(np.float(kr), np.float(h0), np.float(dx)), transform=ax.transAxes, fontsize=10, bbox=props)
+        ax.text(0.02, 0.05, '  $Kr = {0:.2f}$ \n $h0 = {1:.2f} m$ \n  $dx = {2:.2f}$'.format(np.float(kr), np.float(h0), np.float(dx)), transform=ax.transAxes, fontsize=10, bbox=props)
 
-    def hist_Hi(self, ax, df_Hi, ds_fft_hi, wg, x):        
-         
+    def hist_Hi(self, ax, df_Hi, ds_fft_hi, wg, x, num_bins):        
+        'Mendez et al. 2014 Transformation model of wave heigh distribution'
+        
         Hi = ds_fft_hi.sel(Xp=wg).Hi.values
-        # print(ds_fft_hi)
-        Hs = df_Hi.iloc[x].Hs
-        m0 = (Hs/4)**2
+        H = df_Hi.iloc[x].H
+        Hmax = np.nanmax(Hi)
+        Hrms = np.sqrt((1/len(Hi))*np.sum(Hi**2))
         H13 = np.percentile(Hi, 67)
+        
+        # shape parameter kappa
+        kappa = Hrms / Hmax
+        fi = (1-kappa**0.944)**1.187
 
         # the histogram of the data
-        num_bins = 25
-        n, bins, patches = ax.hist(Hi, num_bins, color='b', alpha=0.5, density=1, rwidth=0.95, zorder=2)
+        n, bins, patches = ax.hist(Hi, num_bins, color='yellowgreen', alpha=0.9, density=1, rwidth=0.95, zorder=2)
+        bins = np.linspace(0, bins[-1]+0.5, 100)
+        
+        # Transformation of wave heigh distribution (Rayleigh kappa = 0)
+        #y = 4.01*(bins/Hs**2)*np.exp(-2.005*((bins**2)/(Hs**2)))
+        y = ((2*(fi**2)*Hrms*bins)/(Hrms-kappa*bins)**3)*np.exp(-(fi**2)*(bins/(Hrms-kappa*bins))**2)
 
-        # add a 'best fit' line
-        y = 4.01*(bins/Hs**2)*np.exp(-2.005*((bins**2)/(Hs**2)))
-
-        ax.plot(bins, y, '--', c='k', label='Rayleigh distribution')
-        ax.set_xlabel('$Normalized$ $wave$ $heigh$')
+        ax.plot(bins, y, '-', c='k', label='Kappa = {0}'.format(kappa))
+        ax.set_xlabel('$Normalized$ $wave$ $heigh$ $(m)$')
         ax.set_ylabel('$Probability$ $density$')
-        ax.set_title('Wave heigh distribution', fontweight='bold')
+        ax.set_title('Wave heigh distribution X = WG{0}'.format(x), fontweight='bold')
 
         ax.legend(loc='upper right')
         
-        props = dict(boxstyle='round', facecolor='b', alpha=0.05, edgecolor='w')
-        ax.text(0.03, 0.85, '$Hs%$ $=$ ${0:.2f}$ $m$\n$H_13$ $=$ ${1:.2f}$ $m$'.format(np.float(Hs), H13), transform=ax.transAxes, fontsize=9, bbox=props)
+        props = dict(boxstyle='round', facecolor='cyan', alpha=0.1, edgecolor='w')
+        ax.text(0.75, 0.75, '$H%$ $=$ ${0:.2f}$ $m$\n$H_13$ $=$ ${1:.2f}$ $m$'.format(np.float(H), H13), transform=ax.transAxes, fontsize=10, bbox=props)
 
         
+    def hist_Ru(self, ax, ax1, ax2, ws, g, num_bins):
         
-    def hist_Ru(self, ax, ax1, ws, g):
+        ax1.axis('off')
+        ax2.axis('off')
         
         # the histogram of the data
-        num_bins = 25
-        n, bins, patches = ax.hist(g, num_bins, color='orangered', alpha=0.5, rwidth=0.95, density=1, zorder=2)
+        n, bins, patches = ax.hist(g, num_bins, color='orangered', alpha=0.9, rwidth=0.92, density=1, zorder=2)
         
         ax.set_xlabel('$Normalized$ $runup$')
         ax.set_ylabel('$Probability$ $density$')
@@ -448,59 +466,143 @@ class SwashPlot(object):
         props = dict(boxstyle='round', facecolor='orangered', alpha=0.10, edgecolor='w')
         ax.text(0.03, 0.90, '$Ru2%$ $=$ ${0:.2f}$ $m$'.format(np.float(ws['ru2'].values)), transform=ax.transAxes, fontsize=12, bbox=props)
 
-    def hist_eta(self, ax, xds_table, ws, x):
+    def hist_eta(self, ax, xds_table, ws, x, num_bins):
         
         surface= xds_table.isel(Xp=x).Watlev.values
-            
+        surface = surface[np.isnan(surface) == False]
+        
         # the histogram of the data
-        num_bins = 25
-        n, bins, patches = ax.hist(surface, num_bins, color='khaki', rwidth=0.95, density=1, zorder=2)  
+        n, bins, patches = ax.hist(surface, num_bins, color='khaki', alpha=1, rwidth=0.92, density=1, zorder=2)  
             
         (mu, sigma) = norm.fit(surface)
-
-        y = mlab.normpdf( bins, mu, sigma)
+        
+        bins = np.linspace(-(np.nanmax(bins)+1.5), np.nanmax(bins)+1.5, 100)
+        y = norm.pdf(bins, mu, sigma)
+        #y = mlab.normpdf(bins, mu, sigma)
                     
-        ax.plot(bins, y, '--', c='k', label='Normal distribution')
+        ax.plot(bins, y, '-', c='k', label='Normal distribution')
                     
-        ax.set_xlabel('$Normalized$ $surface$ $elevation$')
+        ax.set_xlabel('$Normalized$ $surface$ $elevation$ $(m)$')
         ax.set_ylabel('$Probability$ $density$')
-        ax.set_title('Surface elevation distribution', fontweight='bold')
-    
+        ax.set_title('Surface elevation distribution X = WG{0}'.format(x), fontweight='bold')
+        
+        #ax.set_xlim(bins[0]-0.5, bins[-1]+0.5)
         ax.legend(loc='upper right')
     
-    def hist_Q(self, ax, ax1, xds_table, ws, q, x):
+    def POT(self, xds_table, ws, q):
+        
+        time = xds_table.Tsec.values
+        
+        x, yQ = [], []
+        umbral = 0.01  # Minimun value to consider the overtopping
+        volume = 1      # Initialized
+        print(q)
+        while volume > umbral:
+           
+            nonq = np.where(q <= umbral)[0]
+            xp = np.where(q == np.nanmax(q))[0]
+            
+            pa = nonq[np.where(nonq <= xp)[0][-1]]
+            ps = nonq[np.where(nonq >= xp)[0][0]]
+            
+            volume = np.trapz(q[pa:ps], time[pa:ps]) 
+ 
+            if volume != 0:
+                yQ.append(volume)
+                x.append(time[np.int(xp)])
+                            
+                qt = [i for i in range(len(q)) if i not in np.arange(pa, ps, 1)]
+                            
+                q = [q[i] for i in qt]
+                time = [time[i] for i in qt]
+                            
+                time = np.array(time)
+                q = np.array(q)
+            
+        return(x, yQ)
+            
+            
+    def hist_Q(self, ax, ax1, ax2, xds_table, ws, q, x, xQ, yQ):
+        
+        tendc = self.proj.tendc
+        time = xds_table.Tsec.values
         
         # the histogram of the data
+        ax1.plot(q, c='r', label='q (m3/s/m)')
+        
+        ax2.scatter(xQ[0], yQ[0], s=3, c='b', label='Q event (m3/m)')
+        ax2.set_xlabel('Time (s)')
+        
+        for qi in range(len(xQ)):
+            ax2.scatter(xQ[qi], yQ[qi], s=6, c='b')
+            ax2.plot([xQ[qi], xQ[qi]], [0, yQ[qi]], c='cornflowerblue', linewidth=1)
+        
         num_bins = 15
-        n, bins, patches = ax.hist(q, num_bins,  color='crimson', rwidth=0.50, density=1, zorder=2)    
-            
-        ax.set_xlabel('$Normalized$ $Overtopping$')
+        n, bins, patches = ax.hist(q, num_bins,  color='coral', rwidth=0.50, zorder=2, density=1)    
+        alpha, loc, scale = pareto.fit(q, floc=q.min(), fscale=q.std())
+        
+        x = np.linspace(0, bins[-1], len(q))
+        ax.plot(x, pareto.pdf(x, b=alpha, scale=scale), c='k', label='Pareto distribution')
+
+        # Fit Pareto distributioin PDF
+        mean, var, skew, kurt = pareto.stats(q, moments='mvsk')
+        
+        ax.legend(loc='upper right')
+        ax1.legend(loc='upper right')
+        ax2.legend(loc='upper right')
+        
+        ax.set_xlim(bins[0], bins[-1])
+        ax1.set_xlim(0, tendc)
+        ax2.set_xlim(0, tendc)
+        
+        ax1.set_ylim(0, np.nanmax(q)+0.05)
+        ax2.set_ylim(0, np.nanmax(yQ)+0.05)
+        
+        ax.set_xlabel('$Normalized$ $Overtopping$ $(m3/m)$')
         ax.set_ylabel('$Probability$ $density$')
         ax.set_title('Overtopping distribution', fontweight='bold')
-
-    def limits_hi(self, ax, xds_table, ws, ds_fft_hi):
         
+
+    def limits_hi(self, ax, xds_table, ws, ds_fft_hi, nbins):
+        
+        gate = ws['Gate_Q'].values
         maxh = 0
         minh = 100
+        limx=-100
         
-        for wg in xds_table.Xp.values:
-            Hi = ds_fft_hi.sel(Xp=wg).Hi.values
-            if np.nanmax(Hi) > maxh: maxh = np.nanmax(Hi)
-            if np.nanmin(Hi) < minh: minh = np.nanmin(Hi)
-            
-        ax.set_xlim(minh, maxh)    
-    
-    def limits_eta(self, ax, xds_table, ws):
-        maxeta = 0
+        for wg in range(gate[0]-30):
+            if wg in ds_fft_hi.Xp.values: # Dry-wet boundary
+                Hi = ds_fft_hi.sel(Xp=wg).Hi.values
+                Hi = Hi[np.isnan(Hi) == False]
+                y, x = np.histogram(Hi, bins=nbins, density=1)
+                if np.nanmax(y) > maxh: maxh = np.nanmax(y)
+                if np.nanmin(y) < minh: minh = np.nanmin(y)
+                if np.nanmax(Hi) > limx: limx = np.nanmax(Hi)
+                    
+        #ax.set_ylim(minh, maxh)
+        ax.set_xlim(0, limx)
+
+    def limits_eta(self, ax, xds_table, ws, nbins):
+        
+        gate = ws['Gate_Q'].values
+        maxeta = -100
         mineta = 100
         
-        for wg in xds_table.Xp.values:
-            eta = xds_table.sel(Xp=wg).Watlev.values
-            if np.nanmax(eta) > maxeta: maxeta = np.nanmax(eta)
-            if np.nanmin(eta) < mineta: mineta = np.nanmin(eta)
-            
-        ax.set_xlim(mineta, maxeta)               
+        limx = -100
+        
+        for wg in range(gate[0]-30):
+            if wg in xds_table.Xp.values: # Dry-wet boundary
+                eta = xds_table.sel(Xp=wg).Watlev.values
+                eta = eta[np.isnan(eta) == False]
+                y, x = np.histogram(eta, bins=nbins, density=1)
 
+                if np.nanmax(y) > maxeta: maxeta = np.nanmax(y)
+                if np.nanmin(y) < mineta: mineta = np.nanmin(y)
+                if np.nanmax(eta) > limx: limx = np.nanmax(eta)
+
+        ax.set_ylim(mineta, maxeta) 
+        ax.set_xlim(-limx, limx)
+        
     def single_plot_stat(self, ws, xds_table, df, df_Hi, p_run, depth):
         '''
         Figure-frames for a X-dependent-video with:
@@ -518,13 +620,13 @@ class SwashPlot(object):
         '''
         
         gate = ws['Gate_Q']
-        hs = ws['H'].values
-        tp = ws['T'].values
+        H = ws['H'].values
+        T = ws['T'].values
         WL = ws['WL'].values
         
         fig = plt.figure(figsize=(20, 9))
         gs = GridSpec(4, 10)
-        gs.update(wspace=1.1,hspace=0.15)
+        gs.update(wspace=1.1,hspace=0.30)
         
         ax0 = fig.add_subplot(gs[0, :5])     # Hsi contribution
         ax1 = fig.add_subplot(gs[1, :5])     # HsIc, HsIg, HsVlf Validation
@@ -536,7 +638,8 @@ class SwashPlot(object):
         ax7 = fig.add_subplot(gs[2, -5:])    # Overtopping discharge
 
         # Save figures to create a video
-        for figure, wg in enumerate(np.arange(0, int(gate), 5)):
+        #for figure, wg in enumerate(np.arange(0, int(gate), 5)):
+        for figure, wg in enumerate(np.arange(0, 5, 5)):
         
             x = np.where(xds_table.Xp.values >= wg)[0][0]
             self.output_contribution(ax0, ws, df_Hi)
@@ -544,7 +647,7 @@ class SwashPlot(object):
             self.output_env(ax2, ws, xds_table, df, df_Hi, depth)
             self.output_gate_series(ax3, ws, xds_table, x)
             self.output_gate_spectrum(ax4, ws, xds_table, x)
-            self.output_forcing(ax5, ws, xds_table, 0, 0)
+            self.output_forcing(ax5, 0, ws, xds_table, 0, 0)
             self.output_gate_runrup(ax6, ws, xds_table, 0, 0)
             self.output_gate_disch(ax7, ws, xds_table, 0, 0)
             
@@ -553,12 +656,15 @@ class SwashPlot(object):
             ax2.plot([wg, wg, wg, wg, wg], [0, 0.2, 0.3, 0.4, 0.5], color='deepskyblue', zorder=1)
             ax2.annotate('WG {0}'.format(wg), xy=(wg-4, 0.90), rotation='vertical')
             
-            ax0.set_title('Jonswap $H_s={0}$ $m$ $T_p={1:.2f}$ $s$ $\u03B3$ $=$ $10$ $WL={2}$ $m$'.format(np.float(hs), np.float(tp), np.float(WL)), fontweight='bold')
+            if ws.forcing.values == 'Jonswap':
+                ax0.set_title('Jonswap $H_s={0}$ $m$ $T_p={1:.2f}$ $s$ $\u03B3$ $=$ ${2}$ $WL={3}$ $m$'.format(np.float(H), np.float(T), ws.gamma.values, np.float(WL)), fontweight='bold')
+            else:
+                ax0.set_title('$H={0}$ $m$ $T={1:.2f}$ $s$ $WL={3}$ $m$'.format(np.float(H), np.float(T), np.float(WL)), fontweight='bold')
             path = op.join(p_run, 'X')
             
             # save figure
             if not os.path.exists(path): os.mkdir(path)
-            fig.savefig(op.join(path, "{0}.png".format(str(figure).zfill(3))),  pad_inches = 0)
+            fig.savefig(op.join(path, "{0}.png".format(str(figure).zfill(3))),  facecolor='w', pad_inches = 0)
             
             # clear axis
             ax0.clear()
@@ -583,10 +689,12 @@ class SwashPlot(object):
             Discharge magnitude /m
         '''
         
-        hs = ws['H'].values
-        tp = ws['T'].values
+        H = ws['H'].values
+        T = ws['T'].values
+        dxinp = self.proj.dxinp
+        cut_X = np.argmin(np.abs(depth)) * dxinp
         
-        fig = plt.figure(figsize=(9, 13))
+        fig = plt.figure(figsize=(13, 9))
         gs = GridSpec(3, 1)
         ax0 = fig.add_subplot(gs[0, :])    # Forcing
         ax1 = fig.add_subplot(gs[1:3, :])  # Profile wave-breaking
@@ -595,15 +703,15 @@ class SwashPlot(object):
         for figure, p in enumerate(np.arange(0, t_video, 2)):
             
             t = xds_table.Tsec.values[p]
-            self.output_forcing(ax0, ws, xds_table, p, t)
+            self.output_forcing(ax0, cut_X, ws, xds_table, p, t)
             self.output_profile(ax1, ws, xds_table, t, depth)
             
-            ax0.set_title('Jonswap $H_s={0}$ m $T_p={1:.2f}$ s $\u03B3 = 10$ Time = {2} s'.format(np.float(hs), np.float(tp), int(xds_table.Tsec.values[p])), fontweight='bold')
+            ax0.set_title('Jonswap $H_s={0}$ m $T_p={1:.2f}$ s $\u03B3 = 10$ Time = {2} s'.format(np.float(H), np.float(T), int(xds_table.Tsec.values[p])), fontweight='bold')
             path = op.join(p_run, 'Time')
             
             # save figure
             if not os.path.exists(path): os.mkdir(path)
-            fig.savefig(op.join(path, "{0}.png".format(str(figure).zfill(3))), pad_inches = 0)
+            fig.savefig(op.join(path, "{0}.png".format(str(figure).zfill(3))), facecolor='w', pad_inches = 0)
             
             # clear axis
             ax0.clear()
@@ -623,54 +731,59 @@ class SwashPlot(object):
         '''
         Figure histogram evolution across the reef profile (Ru, Q, Hi)
         '''
-        gate = ws['Gate_Q']
-        hs = ws['H'].values
-        tp = ws['T'].values
+        gate = ws['Gate_Q'].values
+        H = ws['H'].values
+        T = ws['T'].values
         WL = ws['WL'].values
+        nbins=15
         
-        fig = plt.figure(figsize=(15, 7))
-        gs = GridSpec(3, 2,  wspace=0.2, hspace=0.3)
+        fig = plt.figure(figsize=(15, 15), constrained_layout=True)
+        gs = GridSpec(6, 2, hspace=0.6)
         
-        ax0 = fig.add_subplot(gs[0, 0])    # Profile
-        ax1 = fig.add_subplot(gs[1, 0])    # Hi histogram
-        ax2 = fig.add_subplot(gs[2, 0])    # Ru-Q Histogram
-        ax3 = fig.add_subplot(gs[1, 1])    # Eta
-        ax4 = fig.add_subplot(gs[1, 1])    # Ru-Q histogram
+        ax0 = fig.add_subplot(gs[:2, :])    # Profile
+        ax1 = fig.add_subplot(gs[2:4, 0])    # Hi histogram
+        ax2 = fig.add_subplot(gs[4:6, 0])    # Ru-Q Histogram
+        ax3 = fig.add_subplot(gs[2:4, 1])    # Eta
+        ax4 = fig.add_subplot(gs[4, 1])    # Ru-Q histogram
+        ax5 = fig.add_subplot(gs[5, 1])      # Ru-Q histogram
         
         # save figures to create a video
-        for figure, wg in enumerate(np.arange(0, max(ds_fft_hi.Xp.values), 5)):
+        for figure, wg in enumerate(np.arange(0, gate[0]-10, 5)):
             
             self.attr_axes(ax1)
             self.attr_axes(ax2)
             self.attr_axes(ax3)
             self.attr_axes(ax4)
-        
+            
             x = np.where(xds_table.Xp.values >= wg)[0][0]
-            self.hist_Hi(ax1, df_Hi, ds_fft_hi, wg, x)
-            self.hist_eta(ax3, xds_table, ws, x)
             
-            if np.isnan(q).all() == True:
-                self.hist_Ru(ax2, ax4, ws, g)
-            else:
-                self.hist_Q(ax2, ax4, xds_table, ws, q, x)
+            if x in ds_fft_hi.Xp.values:
+                self.hist_Hi(ax1, df_Hi, ds_fft_hi, wg, x, nbins)
+                self.hist_eta(ax3, xds_table, ws, x, nbins)
+
+                if np.all(q==0) == True:
+                    self.hist_Ru(ax2, ax4, ax5, ws, g, nbins)
+                else:
+                    xQ, yQ = self.POT(xds_table, ws, q)
+                    self.hist_Q(ax2, ax4, ax5, xds_table, ws, q, x, xQ, yQ)
+
+                self.output_env(ax0, ws, xds_table, df, df_Hi, depth)
                 
-            self.output_env(ax0, ws, xds_table, df, df_Hi, depth)
-            
-            # ax0.set_title('Jonswap $H_s={0}$ m $T_p={1:.2f}$ s $\u03B3 = 10$ Time = {2} s'.format(np.float(hs), np.float(tp), int(xds_table.Tsec.values[p])), fontweight='bold')
+                # keep constant limits
+                #self.limits_hi(ax1, xds_table, ws, ds_fft_hi, nbins)
+                #self.limits_eta(ax3, xds_table, ws, nbins)
+                
+            ax0.set_title('Jonswap $H_s={0}$ m $T_p={1:.2f}$ s $\u03B3 = 10$ $WL$ = ${2}$ $m$'.format(np.float(H), np.float(T), np.float(WL)), fontweight='bold')
             path = op.join(p_run, 'Hist')
             
             # plot in ax1 the WG indicator
             ax0.scatter(wg, 0, s=15, c='b', zorder=2)
-            ax0.plot([wg, wg, wg, wg, wg], [0, 0.2, 0.3, 0.4, 0.5], color='deepskyblue', zorder=1)
-            ax0.annotate('WG {0}'.format(wg), xy=(wg-4, 0.90), rotation='vertical')
-            
-            # Keep constant limits
-            self.limits_hi(ax1, xds_table, ws, ds_fft_hi)
-            self.limits_eta(ax3, xds_table, ws)
+            ax0.plot([wg, wg], [WL, 0+0.3], color='k', zorder=1)
+            ax0.annotate('WG {0}'.format(wg), xy=(wg, 1.7), zorder=3, color='k', rotation='vertical')
             
             # save figure
             if not os.path.exists(path): os.mkdir(path)
-            fig.savefig(op.join(path, "{0}.png".format(str(figure).zfill(3))), pad_inches = 0)
+            fig.savefig(op.join(path, "{0}.png".format(str(figure).zfill(3))), facecolor='w', pad_inches = 0)
 
             # clear axis
             ax0.clear()
@@ -678,6 +791,7 @@ class SwashPlot(object):
             ax2.clear()
             ax3.clear()
             ax4.clear()
+            ax5.clear()
             
             plt.ioff()  # mode off interactive graphics
         plt.close(fig)        
