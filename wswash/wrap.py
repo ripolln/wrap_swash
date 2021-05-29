@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # common
+import sys
 import os
 import os.path as op
 import subprocess as sp
@@ -9,11 +10,90 @@ import subprocess as sp
 # pip
 import numpy as np
 import pandas as pd
-from scipy import signal as sg
+import xarray as xr
+from tqdm import tqdm
+import pickle
+
 
 # swash
 from .io import SwashIO
 from .plots import SwashPlot
+from .waves import waves_dispersion
+from .postprocessor import Postprocessor
+
+
+class SwashGrid(object):
+    'SWASH numerical model grid (bathymetry and computation)'
+
+    def __init__(self):
+
+        self.xpc = None      # x origin
+        self.ypc = None      # y origin
+        self.alpc = None     # x-axis orientation
+        self.xlenc = None    # grid length in x
+        self.ylenc = None    # grid length in y
+        self.mxc = None      # number mesh x
+        self.myc = None      # number mesh y
+        self.dx = None       # size mesh x
+        self.dy = None       # size mesh y
+
+
+class SwashInput(object):
+    'SWASH numerical model case input'
+
+    def __init__(self):
+
+        # waves boundary conditions
+        self.waves_parameters = None  # waves parameters  (dict: T, H, ...)
+        self.waves_series = None      # waves series input (numpy array: time, elevation)
+
+        # wind conditions
+        self.wind = None              # winds input (dict: wdir, vx, Ca)
+
+        # computational time step and grid
+        self.c_timestep = None        # computational time step
+        self.c_grid = SwashGrid()     # computational grid
+
+    def prepare_computational_grid(self, nodes_per_wavel, depth0, b_grid):
+        '''
+        Prepares computational grid and computational time step
+
+        nodes_per_wavel  - nodes per wavelength
+        depth0           - depth at waves generation (m)
+        b_grid           - swash project bathymetry grid
+        '''
+
+        T = self.waves_parameters['T']  # waves period
+
+        # Assuming there is always 1m of setup due to (IG, VLF)
+        Ls, ks, cs = waves_dispersion(T, 1)
+        L, k, c = waves_dispersion(T, depth0)
+
+        # calculate computational time step and grid spacing
+        comp_dx = Ls / nodes_per_wavel
+        comp_step = 0.5 * comp_dx / (np.sqrt(9.806*depth0) + np.abs(c))
+
+        self.c_timestep = comp_step
+
+        # prepare computational grid parameters (same as bathymetry grid)
+        self.c_grid.xpc = b_grid.xpc
+        self.c_grid.ypc = b_grid.ypc
+        self.c_grid.alpc = b_grid.alpc
+        self.c_grid.xlenc = b_grid.xlenc
+        self.c_grid.ylenc = b_grid.ylenc
+        self.c_grid.dy = b_grid.dy
+        self.c_grid.myc = b_grid.myc
+
+        # computational grid modifications
+        self.c_grid.dx = comp_dx
+        self.c_grid.mxc = int(b_grid.mxc / comp_dx)
+
+    def save(self, p_save):
+        'Stores a copy of this input to p_save'
+
+        with open(p_save, 'wb') as f:
+            pickle.dump(self, f)
+
 
 class SwashProject(object):
     'SWASH numerical model project parameters. used inside swashwrap and swashio'
@@ -25,84 +105,66 @@ class SwashProject(object):
         http://swash.sourceforge.net/download/zip/swashuse.pdf
         '''
 
-        self.p_main = op.join(p_proj, n_proj)    # project path
+        # project name and paths
         self.name = n_proj                       # project name
-
-        # sub folders 
-        self.p_cases = op.join(self.p_main)  # project cases
-
-        # bathymetry depth value (2D numpy.array)
-        self.depth = None
-        self.gate = None
+        self.p_main = op.join(p_proj, n_proj)    # project path
+        self.p_cases = op.join(self.p_main)      # project cases
 
         # input friction
-        self.friction = None
-        self.friction_file = None
-        self.Cf = None
-        self.cf_ini = None
-        self.cf_fin = None
+        self.friction_bottom = None              # bool: activate friction (entire  bottom)
+        self.cf = None                           # friction manning coefficient (m^-1/3 s)
+        self.friction_file = None                # bool: use a friction file
+        self.cf_ini = None                       # friction start cell
+        self.cf_fin = None                       # friction end cell
 
         # vegetation
-        self.vegetation = None
-        self.vegetation_file = None
-        self.height = None
-        self.diamtr = None
-        self.nstems = None
-        self.drag = None
-        self.np_ini = None
-        self.np_fin = None
-
-        # Wind
-        self.Vel = None
-        self.Wdir = None
-        self.Ca = None
-
-        # input.swn file parameters
-        self.input_waves = True
-        self.vert = None
-        self.par_cdcap = None
-        self.par_jonswap_gamma = None
-        self.WL = None
-        self.vert = None        # vertical layers
-
-        self.Nonhydrostatic = False
-        self.wind = False
-        self.coords_spherical = False  # True spherical, False cartesian
-        sp.specfilename = None
+        self.vegetation = None                   # bool: activate vegetation
+        self.height = None                       # plant height per vertical segment (m)
+        self.diamtr = None                       # plant diameter per vertical segment (m)
+        self.nstems = None                       # num of plants per square meter for each segment
+        self.drag = None                         # drag coefficient per vertical segment
+        self.vegetation_file = None              # bool: use a vegetation file
+        self.np_ini = None                       # vegetation start cell
+        self.np_fin = None                       # vegetation end cell
 
         # computational grid parameters
-        self.cc_xpc = None      # x origin
-        self.cc_ypc = None      # y origin
-        self.cc_alpc = None     # x-axis direction 
-        self.cc_xlenc = None    # grid length in x
-        self.cc_ylenc = None    # grid length in y
-        self.cc_mxc = None      # number mesh x
-        self.cc_myc = None      # number mesh y
-        self.cc_dxinp = None    # size mesh x
-        self.cc_dyinp = None    # size mesh y
+        self.dxL = None                          # nº of nodes per wavelength
 
-        # bathymetry grid parameters
-        self.dp_xpc = None      # x origin
-        self.dp_ypc = None      # y origin
-        self.dp_alpc = None     # x-axis direction 
-        self.dp_xlenc = None    # grid length in x
-        self.dp_ylenc = None    # grid length in y
-        self.dp_mxc = None      # number mesh x
-        self.dp_myc = None      # number mesh y
-        self.dp_dxinp = None    # size mesh x
-        self.dp_dyinp = None    # size mesh y
+        # bathymetry grid and depth
+        self.b_grid = SwashGrid()                # bathymetry grid
+        self.depth = None                        # bathymetry deph values (1D numpy.array)
 
-        self.flume = None
-        self.plane = None
-        self.Gate_Q = None
-        self.dx = None
-        self.h0 = None
-        self.Xfore = None
-        self.Xinner = None
-        self.Rc = None
-        self.step = None
-        self.warmup = None
-        self.delttbl = None
+        # input.swn file parameters
+        self.vert = None                         # multilayered mode 
+        self.non_hydrostatic = False             # non hydrostatic pressure
+
+        # output default configuration
+        self.tbegtbl = 0                         # initial time in fields output
+        self.delttbl = 1                         # time interval between fields
+        self.delttbl_ = 'SEC'                    # time units
+
+    def set_depth(self, depth, dx, dy):
+        '''
+        set depth values and generates bathymetry grid parameters
+
+        depth - bathymetry depth value (2D numpy.array)
+        dx - bathymetry x spacing resolution
+        dy - bathymetry y spacing resolution
+        '''
+
+        # set depth values
+        self.depth = depth
+
+        # set bathymetry grid parameters
+        self.b_grid.xpc = 0
+        self.b_grid.ypc = 0
+        self.b_grid.alpc = 0
+        self.b_grid.dx = dx
+        self.b_grid.dy = dy
+        self.b_grid.mxc = len(depth) - 1
+        self.b_grid.myc = 0
+        self.b_grid.xlenc = int(self.b_grid.mxc * dx)
+        self.b_grid.ylenc = 0
 
 
 class SwashWrap(object):
@@ -125,87 +187,28 @@ class SwashWrap(object):
         # swan bin executable
         self.bin = op.abspath(op.join(p_res, 'swash_bin', 'swash_ser.exe'))
 
-    def build_cases(self, waves_dataset):
+    def build_cases(self, list_swashinput):
         '''
         generates all files needed for swash multi-case execution
 
-        waves_dataset - pandas.dataframe with "n" boundary conditions setup
+        list_swashinput - list of SwashInput objects
         '''
 
         # make main project directory
         self.io.make_project()
 
-        new_waves = pd.DataFrame()
+        # one case for each swash input
+        for ix, si in enumerate(list_swashinput):
 
-        if waves_dataset['forcing'].values[0] == "Jonswap":
-                waves_dataset.rename(columns={"Tp": "T", "Hs": "H"}, inplace=True)
+            # prepare swash input computational grid
+            dxL = self.proj.dxL
+            d0 = np.abs(self.proj.depth[0])
 
-        # one stat case for each wave sea state
-        for ix, (_, ws) in enumerate(waves_dataset.iterrows()):
+            si.prepare_computational_grid(dxL, d0, self.proj.b_grid)
 
-            # build stat case 
+            # build case 
             case_id = '{0:04d}'.format(ix)
-            waves = self.io.build_case(case_id, ws)
-            waves = waves.to_frame()
-
-            new_waves = pd.concat([new_waves, waves], axis=1)
-
-        return(new_waves.transpose())
-
-    def make_reef(self, waves_dataset):
-
-        # make main project directory
-        self.io.make_project()
-
-        coral_config = pd.DataFrame()
-
-        # one stat case for each wave sea state
-        for ix, (_, ws) in enumerate(waves_dataset.iterrows()):
-
-            # build stat case 
-            case_id = '{0:04d}'.format(ix)
-
-            # SWASH case path
-            p_case = op.join(self.proj.p_cases, case_id)
-
-            # make execution dir
-            if not op.isdir(p_case): os.makedirs(p_case)
-
-            waves_reef, depth = self.io.make_reef(p_case, case_id, ws)
-
-            waves_reef = waves_reef.to_frame()
-
-            coral_config = pd.concat([coral_config, waves_reef], axis=1)
-
-        return(coral_config.transpose(), depth)
-
-    def make_waves_series(self, waves_dataset):
-        'Irregular waves series (forcing): monochromatic, bichromatic, Jonswap'
-
-        # make main project directory
-        self.io.make_project()
-
-        # one stat case for each wave sea state
-        for ix, (_, ws) in enumerate(waves_dataset.iterrows()):
-
-            # build stat case 
-            case_id = '{0:04d}'.format(ix)
-
-            # SWASH case path
-            p_case = op.join(self.proj.p_cases, case_id)
-
-            # make execution dir
-            if not op.isdir(p_case): os.makedirs(p_case)
-
-            if ws['forcing'] == "Bichromatic":
-                series = self.io.make_regular(p_case, ws, 'bi')
-            elif ws['forcing'] == "Monochromatic":
-                series = self.io.make_regular(p_case, ws, 'mono')
-            else:
-                ws = ws.rename(columns={"Tp": "T", "Hs": "H"})
-                series = self.io.make_Jonswap(p_case, ws)
-
-        return(series.transpose())
+            self.io.build_case(case_id, si)
 
     def get_run_folders(self):
         'return sorted list of project cases folders'
@@ -256,138 +259,79 @@ class SwashWrap(object):
                 _stderr.flush()
                 _stderr.close()
 
-        # ln input file and run swan case
-        cmd = 'cd {0} && ln -sf input.sws INPUT && {1} INPUT'.format(
-            p_run, self.bin)
+        # check if windows OS
+        is_win = sys.platform.startswith('win')
+
+        if is_win:
+            # WINDOWS - use swashrun command
+            cmd = 'cd {0} && swashrun input && {1} input'.format(
+                p_run, self.bin)
+
+        else:
+            # LINUX/MAC - ln input file and run swan case
+            cmd = 'cd {0} && ln -sf input.sws INPUT && {1} INPUT'.format(
+                p_run, self.bin)
+
         bash_cmd(cmd)
 
-        # windows launch
-        #cmd = 'cd {0} && swashrun input && {1} input'.format(
-        #    p_run, self.bin)
-        #bash_cmd(cmd)
-
-
-
-    def fft_wafo(self, df):
-        ''
-
-        return(self.io.cal_HT(df))
-
-    def reflection(self, ws, xds_out):
-        'calculate reflection coefficient from incident and outgoing energy'
-
-        depth = self.proj.depth
-        delttbl = self.proj.delttbl
-
-        flume = int(len(depth)/4)
-        hs = np.float(ws['H'].values)
-
-        sw_out = xds_out.isel(Xp = int(flume/2)).Watlev.values
-        sw_out = sw_out[np.isnan(sw_out) == False]
-        fout, Eout = sg.welch(sw_out, fs = 1/delttbl , nfft = 512, scaling='density')
-
-        m0out = np.trapz(Eout, x=fout)
-        Hsout = 4 * np.sqrt(m0out)
-        Kr = np.sqrt((Hsout/hs)-1)
-
-        return(Kr)
-
-    def postprocessing(self, waves, t_video):
+    def postprocessing(self, case_ix):
         '''
         Calculate setup, significant wave heigh and print outputs
 
-        waves   -  DataFrame with waves vars
-        t_video -  Duration output video
+        case_ix - case index (int)
         '''
 
-        # get sorted execution folders
-        run_dirs = self.get_run_folders()
+        # case path
+        p_case = op.join(self.proj.p_cases, '{0:04d}'.format(case_ix))
 
-        Gate_Q = waves.Gate_Q
-        WL = waves.WL
+        # read SwashInput from case folder 
+        p_si = op.join(p_case, 'swash_input.pkl')
+        with open(p_si, 'rb') as f:
+            swash_input = pickle.load(f)
 
-        ru2, Q = [], []
+        # read output at points:  output.tab and run.tab
+        out = self.io.output_points(p_case)
 
-        # exctract output case by case and concat in list
-        for case_id, p_run in enumerate(run_dirs):
+        # SWASH custom output Postprocessor
+        sp = Postprocessor(self.proj, swash_input, out)
 
-            xds_out = self.io.output_points(p_run)   # output.tab
-            depth = np.loadtxt(op.join(p_run, 'depth.bot'))
+        # overtopping at maximun bathymetry elevation point
+        Q, q = sp.calculate_overtopping()
 
-            print("\033[1m" +'\nOutput table\n' + "\033[0m")
-            print(xds_out)
+        # waves reflection
+        Kr = sp.calculate_reflection()
 
-            ws = waves.iloc[[case_id]]
-            ws['h0'] = np.abs(depth[0])
-            warmup = ws.warmup.values
+        # run up
+        ru2, g = sp.calculate_runup()
 
-            wp = np.where(xds_out.Tsec.values > warmup)[0]
+        # HT 
+        df_Hi, ds_fft_hi = sp.calculate_HT()
 
-            # overtopping
-            q = xds_out.isel(Tsec=wp, Xp=int(Gate_Q)).Qmag.values
-            q[np.where(q == -9999.0)] = np.nan
-            q = q[np.isnan(q)==False]
-            q = q[np.where(q > 0)]
+        # calculate setup
+        su = sp.calculate_setup()
 
-            ws['q'] = np.nanmean(q)*1000
-            Q.append(np.nanmean(q)*1000) # [l/s/m] 
+        # plot results into folder
+        depth = - np.array(self.proj.depth)
+        dx = self.proj.b_grid.dx
 
-            # reflection coefficient
-            ws['kr'] = self.reflection(ws, xds_out)
+        ws = swash_input.waves_parameters
+        post = {
+            'Gate_Q': int(np.argmax(depth, axis=None, out=None) * dx),
+            'ru2': ru2,
+            'h0': np.abs(depth[0]),
+            'q': Q,
+            'kr': Kr,
+        }
 
-            # runup
-            g = xds_out.isel(Tsec=wp).Runlev.values
-            g[np.where(g == -9999.0)] = np.nan
-            g = g[np.isnan(g)==False]
+        # plot histograms Ru, Q, Hi
+        # TODO problemas con ds_fft_hi
+        #f_h = self.plots.histograms(ws, post, out, g, q, su, df_Hi, ds_fft_hi, depth, p_case)
 
-            if len(g) > 0:
-                ws['ru2'] = np.percentile(g, 98) + WL
-                ru2.append(np.percentile(g, 98) + WL)
+        # plot case output
+        f_o = self.plots.single_plot_stat(ws, post, out, su, df_Hi, p_case, depth)
 
-            else:
-                ws['ru2'] = np.nan
-                ru2.append(np.nan)
+        # generate figures for video making
+        t_video = 500
+        self.plots.single_plot_nonstat(ws, post, out, su, df_Hi, p_case, depth, t_video)
 
-            # statistical and spectral hi
-            df_Hi, ds_fft_hi = self.io.cal_HT(ws, xds_out)
-
-            print("\033[1m" + "\nProcessed data: Fft transformation\n" + "\033[0m")
-            print(df_Hi)
-
-            # calculate mean setup
-            df = self.io.cal_setup(ws, xds_out)
-
-            xds_out = xds_out.squeeze()
-
-            # histograms Ru, Q, Hi
-            self.plots.histograms(ws, xds_out, g, q, df, df_Hi, ds_fft_hi, depth, p_run)
-
-            # save results into folder
-            self.plots.single_plot_stat(ws, xds_out, df, df_Hi, p_run, depth)
-            self.plots.single_plot_nonstat(ws, xds_out, df, df_Hi, p_run, depth, t_video)
-
-            print("\033[1m" + '\nEnd postprocessing case {0}\n'.format(case_id) + "\033[0m")
-
-    def print_wraps(self, waves_dataset):
-        'Print "input.sws" files'
-
-        # make main project directory
-        self.io.make_project()
-
-        # one stat case for each wave sea state
-        for ix, (_, ws) in enumerate(waves_dataset.iterrows()):
-
-            case_id = '{0:04d}'.format(ix)
-            self.io.print_wrap(case_id)
-
-    def plot_grid(self, waves_dataset):
-        "Plot computational grids"
-
-        # make main project directory
-        self.io.make_project()
-
-        # one stat case for each wave sea state
-        for ix, (_, ws) in enumerate(waves_dataset.iterrows()):
-
-            self.plots.plot_computational(ws)
 
