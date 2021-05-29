@@ -15,6 +15,9 @@ import shutil
 from . import io
 from . import wrap
 from . import plots
+from . import postprocessor
+from . import profiles
+from . import waves
 
 
 def set_swash_binary_file(bin_file):
