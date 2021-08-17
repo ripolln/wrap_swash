@@ -50,9 +50,8 @@ class Postprocessor(object):
         q = q[~np.isnan(q)]
         q = q[np.where(q > 0)]
 
-        # set units as l/s/m
-        #Q = np.nansum(q) * 1000 / tendc
-        Q = np.nanmean(q) * 1000
+        # acumulated overtopping (units as l/s/m)
+        Q = np.nansum(q) * 1000 / tendc
 
         return Q, q
 

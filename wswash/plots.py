@@ -4,6 +4,8 @@
 # common
 import os
 import os.path as op
+import glob
+import shutil
 
 # pip
 import numpy as np
@@ -19,6 +21,9 @@ import matplotlib.patches as mpatches
 from matplotlib import colors, patches
 import matplotlib.mlab as mlab
 import cmocean
+
+# moviepy
+from moviepy.editor import concatenate_videoclips, ImageClip
 
 
 class SwashPlot(object):
@@ -797,7 +802,8 @@ class SwashPlot(object):
         ax.set_ylim(mineta, maxeta) 
         ax.set_xlim(-limx, limx)
 
-    def single_plot_stat(self, ws, post, xds_table, df, df_Hi, p_run, depth):
+    def video_summary_output(self, ws, post, p_run, depth,
+                             step_video=1, clip_duration=1):
         '''
         Figure-frames for a X-dependent-video with:
             Hs, Hrms, Hmax
@@ -813,15 +819,29 @@ class SwashPlot(object):
         runrup -     bool var
         '''
 
+        # data from postprocessed output
+        xds_table = post['table_out']
         gate = post['Gate_Q']
+        df = post['su']
+        df_Hi = post['df_Hi']
 
+        # data from wave state
         H = ws['H']
         T = ws['T']
         WL = ws['WL']
 
+        # init figure
         fig = plt.figure(figsize=(20, 9))
         gs = GridSpec(4, 10)
         gs.update(wspace=1.1,hspace=0.30)
+
+        plt.ioff()  # mode off interactive graphics
+
+        # video frames path
+        p_frames = op.join(p_run, 'video_so_frames')
+        if os.path.exists(p_frames):
+            shutil.rmtree(p_frames)
+        os.mkdir(p_frames)
 
         ax0 = fig.add_subplot(gs[0, :5])     # Hsi contribution
         ax1 = fig.add_subplot(gs[1, :5])     # HsIc, HsIg, HsVlf Validation
@@ -833,8 +853,7 @@ class SwashPlot(object):
         ax7 = fig.add_subplot(gs[2, -5:])    # Overtopping discharge
 
         # Save figures to create a video
-        #for figure, wg in enumerate(np.arange(0, int(gate), 5)):
-        for figure, wg in enumerate(np.arange(0, 5, 5)):
+        for figure, wg in enumerate(np.arange(0, int(gate), 5)):
 
             x = np.where(xds_table.Xp.values >= wg)[0][0]
             self.output_contribution(ax0, df_Hi)
@@ -872,24 +891,35 @@ class SwashPlot(object):
             path = op.join(p_run, 'X')
 
             # save figure
-            if not os.path.exists(path): os.mkdir(path)
-            fig.savefig(op.join(path, "{0}.png".format(str(figure).zfill(3))),  facecolor='w', pad_inches = 0)
+            p_fig = op.join(p_frames, "{0}.png".format(str(figure).zfill(6)))
+            fig.savefig(p_fig, facecolor='w', pad_inches = 0)
 
             # clear axis
-            #ax0.clear()
-            #ax1.clear()
-            #ax2.clear()
-            #ax3.clear()
-            #ax4.clear()
-            #ax5.clear()
-            #ax6.clear()
-            #ax7.clear()
+            ax0.clear()
+            ax1.clear()
+            ax2.clear()
+            ax3.clear()
+            ax4.clear()
+            ax5.clear()
+            ax6.clear()
+            ax7.clear()
 
-            plt.ioff()  # mode off interactive graphics
-        #plt.close(fig)
-        return fig
+        plt.close(fig)
 
-    def single_plot_nonstat(self, ws, post, xds_table, df, df_Hi, p_run, depth, t_video):
+        # use moviepy to generate a video
+        p_video = op.join(p_run, 'video_so.mp4')
+        if op.isfile(p_video): os.remove(p_video)
+
+        files_sorted = sorted(glob.glob(op.join(p_frames, '*.png')))
+
+        clips = [ImageClip(m).set_duration(clip_duration) for m in files_sorted]
+        concat_clip = concatenate_videoclips(clips, method='compose')
+        concat_clip.write_videofile(p_video, fps=60, logger=None)
+
+        return p_video
+
+    def video_waves_propagation(self, ws, post, p_run, depth,
+                                step_video=1, clip_duration=1):
         '''
         Figure-frames for a Time-dependent-video with:
             Boundary forcing
@@ -898,19 +928,34 @@ class SwashPlot(object):
             Discharge magnitude /m
         '''
 
+        # data from postprocessed output
+        xds_table = post['table_out']
+
+        # data from wave state
         H = ws['H']
         T = ws['T']
 
+        # data from grid
         dx = self.proj.b_grid.dx
         cut_X = np.argmax(np.abs(depth)) * dx
 
+        # init figure
         fig = plt.figure(figsize=(13, 9))
         gs = GridSpec(3, 1)
         ax0 = fig.add_subplot(gs[0, :])    # Forcing
         ax1 = fig.add_subplot(gs[1:3, :])  # Profile wave-breaking
 
+        # video frames path
+        p_frames = op.join(p_run, 'video_wp_frames')
+        if os.path.exists(p_frames):
+            shutil.rmtree(p_frames)
+        os.mkdir(p_frames)
+
+        plt.ioff()  # mode off interactive graphics
+
         # save figures to create a video
-        for figure, p in enumerate(np.arange(0, t_video, 2)):
+        t_video = len(xds_table.Tsec.values[:])
+        for figure, p in enumerate(np.arange(0, t_video, step_video)):
 
             t = xds_table.Tsec.values[p]
             self.output_forcing(ax0, cut_X, xds_table, p, t)
@@ -922,18 +967,28 @@ class SwashPlot(object):
                 ),
                 fontweight = 'bold',
             )
-            path = op.join(p_run, 'Time')
 
             # save figure
-            if not os.path.exists(path): os.mkdir(path)
-            fig.savefig(op.join(path, "{0}.png".format(str(figure).zfill(3))), facecolor='w', pad_inches = 0)
+            p_fig = op.join(p_frames, "{0}.png".format(str(figure).zfill(6)))
+            fig.savefig(p_fig, facecolor='w', pad_inches = 0)
 
             # clear axis
             ax0.clear()
             ax1.clear()
 
-            plt.ioff()  # mode off interactive graphics
         plt.close(fig)
+
+        # use moviepy to generate a video
+        p_video = op.join(p_run, 'video_wp.mp4')
+        if op.isfile(p_video): os.remove(p_video)
+
+        files_sorted = sorted(glob.glob(op.join(p_frames, '*.png')))
+
+        clips = [ImageClip(m).set_duration(clip_duration) for m in files_sorted]
+        concat_clip = concatenate_videoclips(clips, method='compose')
+        concat_clip.write_videofile(p_video, fps=60, logger=None)
+
+        return p_video
 
     def attr_axes(self, ax):
         ax.grid(
@@ -942,7 +997,6 @@ class SwashPlot(object):
             which = 'major',
             zorder = 1,
         )
-        # ax.grid(color='gainsboro', axis='both', which='minor', linestyle='--')        
 
     def histograms(self, ws, post, xds_table, g, q, df, df_Hi, ds_fft_hi, depth, p_run):
         '''
