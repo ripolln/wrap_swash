@@ -314,24 +314,82 @@ class SwashWrap(object):
         depth = - np.array(self.proj.depth)
         dx = self.proj.b_grid.dx
 
-        ws = swash_input.waves_parameters
-        post = {
+        #ws = swash_input.waves_parameters
+
+        output_post = {
+            'table_out': out,
             'Gate_Q': int(np.argmax(depth, axis=None, out=None) * dx),
             'ru2': ru2,
             'h0': np.abs(depth[0]),
             'q': Q,
+            'su': su,
             'kr': Kr,
+            'df_Hi': df_Hi,
         }
+
+        return output_post
 
         # plot histograms Ru, Q, Hi
         # TODO problemas con ds_fft_hi
         #f_h = self.plots.histograms(ws, post, out, g, q, su, df_Hi, ds_fft_hi, depth, p_case)
 
-        # plot case output
-        f_o = self.plots.single_plot_stat(ws, post, out, su, df_Hi, p_case, depth)
+    def video_waves_propagation(self, case_ix=0):
+        '''
+        Generates waves propagation video 
+        '''
 
-        # generate figures for video making
-        t_video = 500
-        self.plots.single_plot_nonstat(ws, post, out, su, df_Hi, p_case, depth, t_video)
+        # case path
+        p_case = op.join(self.proj.p_cases, '{0:04d}'.format(case_ix))
 
+        # postprocess output
+        output_post = self.postprocessing(case_ix)
+
+        # read SwashInput from case folder 
+        p_si = op.join(p_case, 'swash_input.pkl')
+        with open(p_si, 'rb') as f:
+            swash_input = pickle.load(f)
+
+        # input waves
+        ws = swash_input.waves_parameters
+
+        # depth values
+        depth = - np.array(self.proj.depth)
+
+        # generate video 
+        p_video = self.plots.video_waves_propagation(
+            ws, output_post, p_case, depth,
+            step_video=5, clip_duration=0.1
+        )
+
+        return p_video
+
+    def video_summary_output(self, case_ix=0):
+        '''
+        Generates summary output video
+        '''
+
+        # case path
+        p_case = op.join(self.proj.p_cases, '{0:04d}'.format(case_ix))
+
+        # postprocess output
+        output_post = self.postprocessing(case_ix)
+
+        # read SwashInput from case folder 
+        p_si = op.join(p_case, 'swash_input.pkl')
+        with open(p_si, 'rb') as f:
+            swash_input = pickle.load(f)
+
+        # input waves
+        ws = swash_input.waves_parameters
+
+        # depth values
+        depth = - np.array(self.proj.depth)
+
+        # generate video 
+        p_video = self.plots.video_summary_output(
+            ws, output_post, p_case, depth,
+            step_video=1, clip_duration=0.5,
+        )
+
+        return p_video
 
