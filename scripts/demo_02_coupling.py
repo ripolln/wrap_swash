@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+
+# TODO
+# - codigo obsoleto
+# - necesito metodologia build_cases_spec para acoplar desde SWASH
+
+
 # common 
 import sys
 import os

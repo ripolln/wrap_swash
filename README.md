@@ -25,8 +25,11 @@ A python wrap for SWASH numerical model.
 
 [wswash](./wswash): SWASH numerical model wrapper 
 - [io](./wswash/io.py): SWASH numerical model input/output operations
-- [wrap](./wswash/wrap.py): SWASH numerical model python wrap 
 - [plots](./wswash/plots.py): plotting module 
+- [postprocessor](./wswash/postprocessor.py): SWASH output postprocessor module
+- [profiles](./wswash/profiles.py): customized bathymetry profiles library 
+- [waves](./wswash/waves.py): waves series generation library 
+- [wrap](./wswash/wrap.py): SWASH numerical model python wrap 
 
 
 <a name="doc"></a>
@@ -77,11 +80,11 @@ Download and Compile SWASH numerical model:
   sudo apt install gfortran
 
   # download and unpack
-  wget http://swash.sourceforge.net/download/zip/swash-6.01.tar.gz
-  tar -zxvf swash-6.01.tar.gz
+  wget http://swash.sourceforge.net/download/zip/swash-7.01.tar.gz
+  tar -zxvf swash-7.01.tar.gz
 
   # compile numerical model
-  cd swash-6.01/
+  cd swash/
   make config
   make ser
 ```
@@ -96,8 +99,8 @@ Copy SWASH binary file to module resources
   [GCC 8.4.0] on linux
   Type "help", "copyright", "credits" or "license" for more information.
   
-  >>> from hywaves import swash
-  >>> swash.set_swash_binary_file('swash.exe')
+  >>> import wswash 
+  >>> wswash.set_swash_binary_file('swash.exe')
 ```
 
 
@@ -105,16 +108,15 @@ Copy SWASH binary file to module resources
 ## Examples:
 
 [scripts](./scripts): script examples folder 
-- [01](./scripts/demo_01_wavepropagation.py): wave propagation example
-- [02](./scripts/demo_02_coupling.py): SWAN output copupling to SWASH example
-- [03](./scripts/demo_03_bichromatic.py): bichromatic example 
-- [04](./scripts/demo_04_realprofile.py): real profile example 
-- [05](./scripts/demo_05_Jonswap.py): JONSWAP spectra example 
-- [06](./scripts/demo_06_2Dmono.py): 2D monochromatic example 
-- [07](./scripts/demo_07_HyCreWW.py): HyCReWW example 
+- [demo 01](./scripts/demo_01_wavepropagation.py): wave propagation example
+- [demo 02](./scripts/demo_02_coupling.py): SWAN output copupling to SWASH example
+- [demo 03](./scripts/demo_03_bichromatic.py): bichromatic example 
+- [demo 04](./scripts/demo_04_Jonswap.py): JONSWAP spectra example 
 
 [notebooks](./notebooks): notebooks examples folder 
-- [notebook - SWASH Case](./notebooks/swash_case.ipynb): An easy-to-use Jupyter Notebook to model wave transformation over a shallow cross-shore profile
+- [SWASH Case](./notebooks/swash_case.ipynb): An easy-to-use Jupyter Notebook to model wave transformation over a shallow cross-shore profile
+- [bathymetry examples](./notebooks/bathymetry_profiles_examples.ipynb): examples of customized bathymetry profiles for SWASH case building
+- [waves series examples](./notebooks/waves_series_examples.ipynb): examples of wave series generation (monochromatic, bichromatic, Jonswap spectrum)
 
 
 <a name="ctr"></a>

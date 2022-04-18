@@ -16,7 +16,7 @@ sys.path.insert(0, op.join(op.dirname(__file__), '..'))
 
 # swash wrap module
 from wswash.wrap import SwashProject, SwashWrap, SwashInput
-from wswash.waves import series_regular_bichromatic
+from wswash.waves import series_Jonswap
 
 
 # data
@@ -25,7 +25,7 @@ p_data = op.abspath(op.join(op.dirname(__file__), '..', 'data'))
 
 # SWASH project
 p_proj = op.join(p_data, 'projects')  # swash projects main directory
-n_proj = 'demo_03'                    # project name
+n_proj = 'demo_04'                    # project name
 
 # SWASH wrap objects
 sp = SwashProject(p_proj, n_proj)
@@ -49,17 +49,17 @@ sp.dxL = 30                # nº nodes per wavelength
 
 # SWASH case
 waves_parameters = {
-    "H": 0.5,              # wave height (m) 
-    "WL": 3,               # water level (m)
-    "T1": 4,               # wave period of frequency component 1
-    "T2": 4.5,             # wave period of frequency component 2
-    "warmup": 200,
-    "tendc": 1000,
+    "H": 1,                # wave height (m) 
+    "WL": 0,               # water level (m)
+    "T": 10,               # wave period of frequency component 1
+    "gamma": 3,            # jonswap peak parameter
+    "warmup": 800,
+    "tendc": 4400,
     "deltat": 0.5,
 }
 
 # make waves series dataset
-waves_series = series_regular_bichromatic(waves_parameters)
+waves_series = series_Jonswap(waves_parameters)
 
 
 # SWASH case input 

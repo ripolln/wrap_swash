@@ -162,7 +162,7 @@ class SwashIO(object):
         # waves sea state parameters
         WL = waves_params['WL']          # water level
         warmup = waves_params['warmup']  # spinup time 
-        tendc = waves_params['tendc']    # spinup time 
+        tendc = waves_params['tendc']    # simulation time 
 
         # .sws file parameters
         vert = self.proj.vert

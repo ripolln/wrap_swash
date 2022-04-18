@@ -9,15 +9,9 @@ __url__         = 'https://gitlab.com/geoocean/bluemath/numerical-models-wrapper
 __description__ = 'SWASH numerical model python wrap'
 __keywords__    = 'SWASH waves numerical'
 
+import os
 import os.path as op
 import shutil
-
-from . import io
-from . import wrap
-from . import plots
-from . import postprocessor
-from . import profiles
-from . import waves
 
 
 def set_swash_binary_file(bin_file):
@@ -25,7 +19,12 @@ def set_swash_binary_file(bin_file):
 
     # swan bin executable
     p_res = op.join(op.dirname(op.realpath(__file__)), 'resources')
-    p_bin = op.abspath(op.join(p_res, 'swash_bin', 'swash_ser.exe'))
+    p_sbin = op.join(p_res, 'swash_bin')
+
+    if not op.isdir(p_sbin):
+        os.makedirs(p_sbin)
+
+    p_bin = op.abspath(op.join(p_sbin, 'swash_ser.exe'))
 
     # copy file
     shutil.copyfile(bin_file, p_bin)

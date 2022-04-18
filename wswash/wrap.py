@@ -63,7 +63,12 @@ class SwashInput(object):
         b_grid           - swash project bathymetry grid
         '''
 
-        T = self.waves_parameters['T']  # waves period
+        # get minor wave period if bichromatic waves series
+        if 'T' not in self.waves_parameters.keys():
+            T = np.min([self.waves_parameters['T1'], self.waves_parameters['T2']])
+
+        else:
+            T = self.waves_parameters['T']  # waves period
 
         # Assuming there is always 1m of setup due to (IG, VLF)
         Ls, ks, cs = waves_dispersion(T, 1)
@@ -174,7 +179,7 @@ class SwashWrap(object):
         '''
         initializes wrap
 
-        swash_proj - SwanProject() instance, contains project parameters
+        swash_proj - SwashProject() instance, contains project parameters
         '''
 
         self.proj = swash_proj              # swash project parameters
