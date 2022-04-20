@@ -54,6 +54,7 @@ def series_Jonswap(waves):
     tendc = waves['tendc']
 
     # series duration
+    # TODO: puede que haya algun problema en esta suma
     duration = tendc + int(warmup)
     time = np.arange(0, duration, deltat)
 
@@ -173,4 +174,9 @@ def waves_dispersion(T, h):
     c = np.sqrt(9.8*np.tanh(k*h)/k)
 
     return(L, k, c)
+
+
+# TODO eliminar
+def test_tutorial_commit(nada):
+    print(nada)
 
