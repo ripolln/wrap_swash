@@ -53,19 +53,33 @@ waves_parameters = {
     "WL": 3,               # water level (m)
     "T1": 4,               # wave period of frequency component 1
     "T2": 4.5,             # wave period of frequency component 2
-    "warmup": 200,
-    "tendc": 1000,
+    #"warmup": 200,
+    #"tendc": 1000,
+    "warmup": 10,
+    "tendc": 40,
     "deltat": 0.5,
 }
 
 # make waves series dataset
 waves_series = series_regular_bichromatic(waves_parameters)
 
+# Define wind parameters
+Vel = 14        # wind speed  at 10 m height (m/s)
+Wdir = 0        # wind direction at 10 m height (º)
+Ca = 0.0026     # dimensionless coefficient (default 0.002)
+
+wind = {
+    "wdir": Wdir,
+    "vx": Vel,
+    "Ca": Ca,
+}
+
 
 # SWASH case input 
 si = SwashInput()
 si.waves_parameters = waves_parameters
 si.waves_series = waves_series
+si.wind = wind
 
 
 # build cases
@@ -75,9 +89,9 @@ sw.build_cases([si])
 sw.run_cases()
 
 # postprocess case output
-output = sw.postprocessing(case_ix=0)
+output = sw.postprocessing(case_ix=0, do_spectral_analysis=True)
 
-print('output')
+print('\noutput\n')
 for k in output.keys():
     print(k)
     print(output[k])

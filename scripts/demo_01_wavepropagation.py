@@ -99,7 +99,7 @@ sw.run_cases()
 # postprocess case output
 output = sw.postprocessing(case_ix=0)
 
-print('output')
+print('\noutput\n')
 for k in output.keys():
     print(k)
     print(output[k])
