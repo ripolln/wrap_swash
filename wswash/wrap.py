@@ -71,7 +71,7 @@ class SwashInput(object):
             T = self.waves_parameters['T']  # waves period
 
         # Assuming there is always 1m of setup due to (IG, VLF)
-        Ls, ks, cs = waves_dispersion(T, 1)
+        Ls, ks, cs = waves_dispersion(T, 1)  # 1 meter depth for infragravity waves 
         L, k, c = waves_dispersion(T, depth0)
 
         # calculate computational time step and grid spacing
@@ -277,13 +277,19 @@ class SwashWrap(object):
             cmd = 'cd {0} && ln -sf input.sws INPUT && {1} INPUT'.format(
                 p_run, self.bin)
 
+            # redirect SWASH output
+            cmd += ' 2>&1 > wswash_exec.log'
+
         bash_cmd(cmd)
 
-    def postprocessing(self, case_ix):
+    def postprocessing(self, case_ix, kr_flume_f=0.25,
+                       do_spectral_analysis=False):
         '''
         Calculate setup, significant wave heigh and print outputs
 
-        case_ix - case index (int)
+        case_ix               - case index (int)
+        kr_flume_f            - fraction of profile length to compute reflection
+        do_spectral_analysis  - (bool) True for spectral analysis
         '''
 
         # case path
@@ -304,23 +310,19 @@ class SwashWrap(object):
         Q, q = sp.calculate_overtopping()
 
         # waves reflection
-        Kr = sp.calculate_reflection()
+        Kr = sp.calculate_reflection(flume_f=kr_flume_f)
 
         # run up
         ru2, g = sp.calculate_runup()
 
-        # HT 
-        df_Hi, ds_fft_hi = sp.calculate_HT()
-
         # calculate setup
         su = sp.calculate_setup()
 
-        # plot results into folder
+        # add variables to output 
         depth = - np.array(self.proj.depth)
         dx = self.proj.b_grid.dx
 
-        #ws = swash_input.waves_parameters
-
+        # output dictionary
         output_post = {
             'table_out': out,
             'Gate_Q': int(np.argmax(depth, axis=None, out=None) * dx),
@@ -329,18 +331,20 @@ class SwashWrap(object):
             'q': Q,
             'su': su,
             'kr': Kr,
-            'df_Hi': df_Hi,
         }
+
+        # optional: spectral analysis 
+        if do_spectral_analysis:
+            df_Hi, ds_fft_hi = sp.calculate_spectral_analysis()
+
+            output_post['df_Hi'] = df_Hi
+            output_post['ds_fft_hi'] = ds_fft_hi
 
         return output_post
 
-        # plot histograms Ru, Q, Hi
-        # TODO problemas con ds_fft_hi
-        #f_h = self.plots.histograms(ws, post, out, g, q, su, df_Hi, ds_fft_hi, depth, p_case)
-
     def video_waves_propagation(self, case_ix=0):
         '''
-        Generates waves propagation video 
+        Generates waves propagation video
         '''
 
         # case path
@@ -377,7 +381,7 @@ class SwashWrap(object):
         p_case = op.join(self.proj.p_cases, '{0:04d}'.format(case_ix))
 
         # postprocess output
-        output_post = self.postprocessing(case_ix)
+        output_post = self.postprocessing(case_ix, do_spectral_analysis=True)
 
         # read SwashInput from case folder 
         p_si = op.join(p_case, 'swash_input.pkl')

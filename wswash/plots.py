@@ -799,7 +799,7 @@ class SwashPlot(object):
                 if np.nanmin(y) < mineta: mineta = np.nanmin(y)
                 if np.nanmax(eta) > limx: limx = np.nanmax(eta)
 
-        ax.set_ylim(mineta, maxeta) 
+        ax.set_ylim(mineta, maxeta)
         ax.set_xlim(-limx, limx)
 
     def video_summary_output(self, ws, post, p_run, depth,
@@ -868,7 +868,7 @@ class SwashPlot(object):
             # plot in ax1 the WG indicator
             ax2.scatter(wg, 0, s = 15, c = 'b', zorder = 2)
             ax2.plot(
-                [wg, wg, wg, wg, wg], [0, 0.2, 0.3, 0.4, 0.5], 
+                [wg, wg, wg, wg, wg], [0, 0.2, 0.3, 0.4, 0.5],
                 color = 'deepskyblue',
                 zorder = 1,
             )
