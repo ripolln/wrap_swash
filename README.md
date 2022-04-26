@@ -28,6 +28,8 @@ A python wrap for SWASH numerical model.
 - [plots](./wswash/plots.py): plotting module 
 - [postprocessor](./wswash/postprocessor.py): SWASH output postprocessor module
 - [profiles](./wswash/profiles.py): customized bathymetry profiles library 
+- [spectra](./wswash/spectra.py): spectral analysis for output postprocessing
+- [statistics](./wswash/statistics.py): statistical analysis for output postprocessing 
 - [waves](./wswash/waves.py): waves series generation library 
 - [wrap](./wswash/wrap.py): SWASH numerical model python wrap 
 
