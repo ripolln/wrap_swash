@@ -29,20 +29,18 @@ def read_tabfile(p_file):
 
     # read head colums (variables names)
     f = open(p_file, "r")
-    lineas = f.readlines()
+    lines = f.readlines()
 
-    names = lineas[4].split()
+    names = lines[4].split()
     names = names[1:] # Eliminate '%'
-    f.close()
 
     # read data rows
-    data = np.loadtxt(p_file, skiprows=7)
+    values = pd.Series(lines[7:]).str.split(expand=True).values.astype(float)
+    df = pd.DataFrame(values, columns=names)
 
-    ds = pd.DataFrame({})
-    for p, t in enumerate(names):
-        ds[t] = data[:,p]
+    f.close()
 
-    return(ds)
+    return(df)
 
 
 class SwashIO(object):
@@ -272,8 +270,11 @@ class SwashIO(object):
 
         # wind
         if wind != None:
-            # TODO es necesario el "cd=" ?
-            t += "WIND {0} {1} CONSTANT cd={2}\n$\n".format(
+
+            # default drag coefficient
+            if not 'Ca' in wind.keys(): wind['Ca'] = 0.002
+
+            t += "WIND {0} {1} CONSTANT {2}\n$\n".format(
                 wind['vx'], wind['wdir'], wind['Ca'],
             )
 
@@ -309,7 +310,7 @@ class SwashIO(object):
         # compute
         t += "$Starts computation\n"
         t += 'TEST  1,0\n'
-        t += 'COMPUTE 000000.000 {0:.2f} SEC {1}{2}{3}.000\n'.format(
+        t += 'COMPUTE 000000.000 {0:.4f} SEC {1}{2}{3}.000\n'.format(
             c_timestep, str(Hr).zfill(2), str(Mn).zfill(2), str(Sc).zfill(2))
         t += 'STOP\n$\n'
 
