@@ -97,7 +97,7 @@ sw.build_cases(l_cases)
 sw.run_cases()
 
 # postprocess case output
-output = sw.postprocessing(case_ix=0)
+output = sw.postprocessing(case_ix=0, do_spectral_analysis=True)
 
 print('\noutput\n')
 for k in output.keys():

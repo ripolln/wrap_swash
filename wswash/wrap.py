@@ -335,10 +335,10 @@ class SwashWrap(object):
 
         # optional: spectral analysis 
         if do_spectral_analysis:
-            df_Hi, ds_fft_hi = sp.calculate_spectral_analysis()
+            df_spec, ds_stat = sp.calculate_spectral_analysis()
 
-            output_post['df_Hi'] = df_Hi
-            output_post['ds_fft_hi'] = ds_fft_hi
+            output_post['df_spec'] = df_spec
+            output_post['ds_stat'] = ds_stat
 
         return output_post
 

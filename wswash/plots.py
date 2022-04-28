@@ -823,7 +823,7 @@ class SwashPlot(object):
         xds_table = post['table_out']
         gate = post['Gate_Q']
         df = post['su']
-        df_Hi = post['df_Hi']
+        df_Hi = post['df_spec']
 
         # data from wave state
         H = ws['H']

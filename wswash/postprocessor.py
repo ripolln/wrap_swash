@@ -9,7 +9,6 @@ from scipy import signal
 from .spectra import spectral_analysis
 from .statistics import upcrossing
 
-# TODO: calculate_spectral_analysis requiere repaso de metodologia
 
 class Postprocessor(object):
     'SWASH numerical model customized output postprocessor operations'
@@ -176,8 +175,6 @@ class Postprocessor(object):
         ds_fft_hi  -
         '''
 
-        # TODO: repaso de metodlogia necesario. ds_fft_hi repite coordenadas
-
         # get data from project, input and output
         delttbl = self.swash_proj.delttbl
         warmup = self.swash_input.waves_parameters['warmup']
@@ -195,12 +192,12 @@ class Postprocessor(object):
         Hs, Hic, Hig, Hvlf = [], [], [], []
 
         # Save Hi for each X value
-        ds_fft_hi = xr.Dataset(
+        ds_stat = xr.Dataset(
             data_vars = {
-                'Hi': (('Xp',), []),
             },
             coords = {
                 'Xp': [],
+                'ix_wave': [],
             },
         )
 
@@ -244,15 +241,21 @@ class Postprocessor(object):
                 env_mi.append(np.nanmin(sw))
                 x.append(xds_table.Xp.values[i])
 
-                # TODO: multiple coordinates with equal value at Xp
-                ds_Hi = pd.DataFrame({'Xp':np.ones(len(Hi))*j, 'Hi':Hi})
-                ds_Hi = ds_Hi.set_index('Xp')
-                ds_Hi = ds_Hi.to_xarray()
+                # merge stats for output
+                ds_Hi = xr.Dataset(
+                    {
+                        'Hi':(['Xp', 'ix_wave'], np.array(Hi).reshape(1, -1)),
+                    },
+                    coords = {
+                        'ix_wave':np.arange(0, len(Hi), 1).reshape(-1),
+                        'Xp': [j],
+                    }
+                )
 
-                ds_fft_hi = xr.concat([ds_fft_hi, ds_Hi], dim='Xp')
+                ds_stat = xr.merge([ds_stat, ds_Hi])
 
         # mount output dataframe
-        df = pd.DataFrame({
+        df_spec = pd.DataFrame({
             'Xi': x,
             'Hmax': Hm,
             'Hrms': Hr,
@@ -265,12 +268,8 @@ class Postprocessor(object):
         })
 
         # clean output dataframe
-        df['E_min'][df['E_min']==-99.0] = np.nan
-        df['E_max'][df['E_max']==-99.0] = np.nan
-        df['Hs'][df['Hs'] > 30] = np.nan
-        df['HIC'][df['HIC'] > 30] = np.nan
-        df['HIG'][df['HIG'] > 30] = np.nan
-        df['HVLF'][df['HVLF'] > 30] = np.nan
+        df_spec['E_min'][df_spec['E_min']==-99.0] = np.nan
+        df_spec['E_max'][df_spec['E_max']==-99.0] = np.nan
 
-        return(df, ds_fft_hi)
+        return(df_spec, ds_stat)
 
